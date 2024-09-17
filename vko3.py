@@ -7,8 +7,9 @@ import threading  # Säikeet
 # Aloita pygame
 pygame.mixer.init()
 
-# Lataa osumaääni
+# Lataa äänet
 osuma_aani = "aaniefektit/splat.wav"  # Äänen tiedostopolku
+voitto_aani = "aaniefektit/win.wav"  # Pelin loppuääni
 
 # Luo pääikkuna
 root = tk.Tk()
@@ -61,25 +62,43 @@ def paivita_osumat(heittaja):
     tulostaulu_text.set(f"Kernesti: {osumat_sanakirja['kernesti_osumat']}  Ernesti: {osumat_sanakirja['ernesti_osumat']}")
     print("Päivitetyt osumat:", osumat_sanakirja)
 
+    tarkista_johdossa_2()
+
 # Heittotoiminto (tomaatti lentää oikealta vasemmalle tai päinvastoin)
-def heita_tomaatti(lahtopiste, suunta, heittaja):
+def heita_tomaatti(lahtopiste, suunta, heittaja, kohde=None, onko_vastustaja=False):
     x, y = canvas.coords(lahtopiste)
     
     def animoi():
         nonlocal x
-        x += 10 * suunta  # Liikutaan joko oikealle tai vasemmalle
+        x += 10 * suunta
         canvas.coords(tomaatti, x, y)
         
-        # Tarkista osuuko tomaatti maalitauluun
-        if (600 - 50 <= x <= 600 + 50) and (400 - 160 <= y <= 400 + 160):  # osuma-alue maalitaulun ympärillä
-            canvas.delete(tomaatti)
-            canvas.create_image(600, 500, image=osuma_img)  # Osumaefekti
-            pygame.mixer.Sound(osuma_aani).play()  # Toista osumaääni
-            paivita_osumat(heittaja)  # Päivitä osumatiedot sanakirjaan
-        elif 0 < x < 1200:  # Tomaatti on yhä canvasin sisällä
-            root.after(50, animoi)  # Animaatio jatkuu, kunnes osuma tai ulos ruudulta
+        # Jos heitetään vastustajaa päin, tarkista osuuko
+        if onko_vastustaja and kohde is not None:
+            kohde_x, kohde_y = canvas.coords(kohde)
+            if abs(x - kohde_x) < 50 and abs(y - kohde_y) < 100:  # Osuma-alue
+                canvas.delete(tomaatti)
+                canvas.create_image(kohde_x, kohde_y, image=osuma_img)
+                pygame.mixer.Sound(osuma_aani).play()
+                pygame.mixer.Sound(voitto_aani).play()
+                peli_loppu(heittaja)
+                return
+        
+        # Tarkista osuuko tomaatti maalitauluun (vain jos ei yritetä osua vastustajaan)
+        if not onko_vastustaja:
+            if (600 - 50 <= x <= 600 + 50) and (400 - 160 <= y <= 400 + 160):
+                canvas.delete(tomaatti)
+                canvas.create_image(600, 500, image=osuma_img)
+                pygame.mixer.Sound(osuma_aani).play()
+                paivita_osumat(heittaja)
+                return
+        
+        # Jatka animaatiota, jos tomaatti on yhä kentällä
+        if 0 < x < 1200:
+            root.after(50, animoi)
         else:
-            canvas.delete(tomaatti)  # Poista tomaatti, jos se ylittää canvasin reunat
+            canvas.delete(tomaatti)
+
 
     # Luo tomaatti ja animaatiotehtävä
     tomaatti = canvas.create_image(x, y, image=tomaatti_img)
@@ -100,8 +119,27 @@ def heita_ernestilla():
 def heita_kernestilla():
     heita_tomaatti(kernesti, 1, "kernesti")
 
+# Tarkista, onko toinen pelaaja kahden osuman johdossa
+def tarkista_johdossa_2():
+    ernesti_johto = osumat_sanakirja['ernesti_osumat'] - osumat_sanakirja['kernesti_osumat']
+    kernesti_johto = osumat_sanakirja['kernesti_osumat'] - osumat_sanakirja['ernesti_osumat']
+    
+    if ernesti_johto >= 2:
+        heita_tomaatti(ernesti, -1, "ernesti", kernesti, onko_vastustaja=True)
+    elif kernesti_johto >= 2:
+        heita_tomaatti(kernesti, 1, "kernesti", ernesti, onko_vastustaja=True)
+
+voittoteksti = None
+
+# Peli loppuu, kun toinen osuu vastustajaan
+def peli_loppu(voittaja):
+    global voittoteksti
+    voittoteksti = canvas.create_text(600, 160, text=f"{voittaja} voitti pelin!", font=("Helvetica", 36, "bold"), fill="#4CAF50")
+
 # Resetoi tulokset
 def resetoi_tulokset():
+    global voittoteksti
+    canvas.delete(voittoteksti)
     osumat_sanakirja["ernesti_osumat"] = 0
     osumat_sanakirja["kernesti_osumat"] = 0
     osumat_sanakirja["yhteensa"] = 0
